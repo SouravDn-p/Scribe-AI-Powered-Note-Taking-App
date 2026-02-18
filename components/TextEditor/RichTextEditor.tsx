@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
@@ -31,6 +31,10 @@ import {
   AlignRight,
   Link2,
   Unlink,
+  FileText,
+  FileDown,
+  Printer,
+  Eraser,
 } from "lucide-react";
 import Swal from "sweetalert2";
 
@@ -81,11 +85,27 @@ const FontSize = Extension.create({
   },
 });
 
+function getWordCount(html: string): number {
+  const text = html
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text ? text.split(" ").filter(Boolean).length : 0;
+}
+
+function getCharCount(html: string): number {
+  return html.replace(/<[^>]*>/g, "").length;
+}
+
 type Props = {
   value: string;
   onChange: (html: string) => void;
   placeholder?: string;
   className?: string;
+  onDownloadPdf?: (getHtml: () => string) => void;
+  onDownloadDocx?: (getHtml: () => string) => void;
+  onClear?: () => void;
+  onPrint?: (getHtml: () => string) => void;
 };
 
 const COLORS = [
@@ -113,10 +133,16 @@ export default function RichTextEditor({
   onChange,
   placeholder = "Write something amazing...",
   className = "",
+  onDownloadPdf,
+  onDownloadDocx,
+  onClear,
+  onPrint,
 }: Props) {
   const pdfjsRef = useRef<typeof import("pdfjs-dist") | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const fileInputId = useId();
+  const imageInputId = useId();
   const [showTextColorPicker, setShowTextColorPicker] = useState(false);
   const [showHighlightColorPicker, setShowHighlightColorPicker] =
     useState(false);
@@ -169,7 +195,7 @@ export default function RichTextEditor({
     editorProps: {
       attributes: {
         class:
-          "rich-text-content focus:outline-none min-h-[250px] p-4 text-gray-800 leading-relaxed",
+          "rich-text-content focus:outline-none min-h-[280px] px-6 py-6 text-slate-700 leading-[1.7] dark:text-slate-300",
         "data-placeholder": placeholder,
       },
     },
@@ -182,8 +208,11 @@ export default function RichTextEditor({
 
   if (!editor)
     return (
-      <div className="p-3 text-sm text-gray-500 border rounded-md animate-pulse">
-        Loading editor…
+      <div className="flex min-h-[320px] items-center justify-center rounded-2xl border border-slate-200/80 bg-slate-50/50 dark:border-slate-700/50 dark:bg-slate-800/30">
+        <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+          <div className="size-4 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-600 dark:border-slate-600 dark:border-t-indigo-500" />
+          <span className="text-sm font-medium">Loading editor…</span>
+        </div>
       </div>
     );
 
@@ -334,11 +363,12 @@ export default function RichTextEditor({
     <Button
       type="button"
       size="icon"
-      variant={active ? "default" : "ghost"}
+      variant="ghost"
       onClick={onClick}
       className={cn(
-        "h-9 w-9 rounded-lg transition-all hover:bg-blue-100 hover:text-blue-600",
-        active && "bg-blue-600 text-white shadow-md",
+        "size-8 rounded-md text-slate-600 transition-all hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white",
+        active &&
+          "bg-indigo-100 text-indigo-700 shadow-sm dark:bg-indigo-900/50 dark:text-indigo-300",
       )}
       title={title}
     >
@@ -351,11 +381,12 @@ export default function RichTextEditor({
       key={label}
       type="button"
       size="sm"
+      variant="ghost"
       onClick={() => editor.chain().focus().toggleHeading({ level }).run()}
       className={cn(
-        "px-2 h-8 font-semibold rounded-md transition-all bg-transparent hover:bg-sky-100 hover:text-sky-600",
+        "h-8 px-2.5 text-xs font-semibold rounded-md transition-all text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white",
         editor.isActive("heading", { level }) &&
-          "bg-sky-500 text-white shadow-md",
+          "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300",
       )}
       title={`Heading ${level}`}
     >
@@ -366,12 +397,12 @@ export default function RichTextEditor({
   return (
     <div
       className={cn(
-        "w-full border border-gray-200 rounded-xl shadow-md bg-white flex flex-col overflow-hidden",
+        "w-full overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xl shadow-slate-200/50 dark:border-slate-700/50 dark:bg-slate-900 dark:shadow-slate-950/50",
         className,
       )}
     >
       {/* Toolbar */}
-      <div className="sticky top-0 z-30 flex flex-wrap items-center gap-2 p-2 border-b bg-gradient-to-r from-gray-50 to-blue-50 backdrop-blur-md shadow-sm">
+      <div className="sticky top-0 z-30 flex flex-wrap items-center gap-1 border-b border-slate-200/80 bg-slate-50/80 px-3 py-2.5 backdrop-blur-sm dark:border-slate-700/50 dark:bg-slate-800/50">
         {toolbarButton(
           <Bold size={16} />,
           editor.isActive("bold"),
@@ -396,7 +427,10 @@ export default function RichTextEditor({
           toggle(() => editor.chain().focus().toggleStrike().run()),
           "Strikethrough",
         )}
-        <Separator orientation="vertical" className="h-6 mx-1" />
+        <Separator
+          orientation="vertical"
+          className="mx-1.5 h-5 bg-slate-200 dark:bg-slate-600"
+        />
 
         {toolbarButton(
           <Undo2 size={16} />,
@@ -410,12 +444,18 @@ export default function RichTextEditor({
           () => editor.chain().focus().redo().run(),
           "Redo",
         )}
-        <Separator orientation="vertical" className="h-6 mx-1" />
+        <Separator
+          orientation="vertical"
+          className="mx-1.5 h-5 bg-slate-200 dark:bg-slate-600"
+        />
 
         {["H1", "H2", "H3", "H4"].map((h, i) =>
           headingButton(h, (i + 1) as 1 | 2 | 3 | 4),
         )}
-        <Separator orientation="vertical" className="h-6 mx-1" />
+        <Separator
+          orientation="vertical"
+          className="mx-1.5 h-5 bg-slate-200 dark:bg-slate-600"
+        />
 
         {toolbarButton(
           <List size={16} />,
@@ -429,7 +469,10 @@ export default function RichTextEditor({
           () => editor.chain().focus().toggleOrderedList().run(),
           "Numbered List",
         )}
-        <Separator orientation="vertical" className="h-6 mx-1" />
+        <Separator
+          orientation="vertical"
+          className="mx-1.5 h-5 bg-slate-200 dark:bg-slate-600"
+        />
 
         {toolbarButton(
           <AlignLeft size={16} />,
@@ -449,7 +492,10 @@ export default function RichTextEditor({
           () => editor.chain().focus().setTextAlign("right").run(),
           "Align Right",
         )}
-        <Separator orientation="vertical" className="h-6 mx-1" />
+        <Separator
+          orientation="vertical"
+          className="mx-1.5 h-5 bg-slate-200 dark:bg-slate-600"
+        />
 
         {toolbarButton(
           <Link2 size={16} />,
@@ -463,7 +509,10 @@ export default function RichTextEditor({
           () => editor.chain().focus().unsetLink().run(),
           "Remove Link",
         )}
-        <Separator orientation="vertical" className="h-6 mx-1" />
+        <Separator
+          orientation="vertical"
+          className="mx-1.5 h-5 bg-slate-200 dark:bg-slate-600"
+        />
 
         {/* Color pickers */}
         <div className="relative">
@@ -472,18 +521,18 @@ export default function RichTextEditor({
             size="icon"
             variant="ghost"
             onClick={() => setShowTextColorPicker(!showTextColorPicker)}
-            className="h-9 w-9 hover:bg-blue-100 rounded-md"
+            className="size-8 rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
             title="Text Color"
           >
-            <span className="inline-block w-4 h-4 bg-black rounded-full"></span>
+            <span className="inline-block size-4 rounded-full border border-slate-300 bg-slate-900 dark:border-slate-600 dark:bg-white"></span>
           </Button>
           {showTextColorPicker && (
-            <div className="absolute top-full left-0 grid grid-cols-5 gap-2 p-2 border bg-white shadow-lg rounded-xl mt-1 z-40">
+            <div className="absolute left-0 top-full z-40 mt-1.5 grid grid-cols-5 gap-1.5 rounded-xl border border-slate-200 bg-white p-2.5 shadow-xl dark:border-slate-700 dark:bg-slate-800">
               {COLORS.map((c) => (
                 <button
                   key={c}
                   style={{ backgroundColor: c }}
-                  className="w-8 h-8 rounded-full border hover:scale-110 transition"
+                  className="size-7 rounded-full border-2 border-slate-200 transition-transform hover:scale-110 dark:border-slate-600"
                   onClick={() => {
                     editor.chain().focus().setColor(c).run();
                     setShowTextColorPicker(false);
@@ -502,18 +551,18 @@ export default function RichTextEditor({
             onClick={() =>
               setShowHighlightColorPicker(!showHighlightColorPicker)
             }
-            className="h-9 w-9 hover:bg-blue-100 rounded-md"
+            className="size-8 rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
             title="Highlight Color"
           >
-            <span className="inline-block w-4 h-4 bg-yellow-300 rounded-full"></span>
+            <span className="inline-block size-4 rounded-full bg-amber-300 ring-1 ring-slate-200 dark:ring-slate-600"></span>
           </Button>
           {showHighlightColorPicker && (
-            <div className="absolute top-full left-0 grid grid-cols-5 gap-2 p-2 border bg-white shadow-lg rounded-xl mt-1 z-40">
+            <div className="absolute left-0 top-full z-40 mt-1.5 grid grid-cols-5 gap-1.5 rounded-xl border border-slate-200 bg-white p-2.5 shadow-xl dark:border-slate-700 dark:bg-slate-800">
               {COLORS.map((c) => (
                 <button
                   key={c}
                   style={{ backgroundColor: c }}
-                  className="w-8 h-8 rounded-full border hover:scale-110 transition"
+                  className="size-7 rounded-full border-2 border-slate-200 transition-transform hover:scale-110 dark:border-slate-600"
                   onClick={() => {
                     editor.chain().focus().setHighlight({ color: c }).run();
                     setShowHighlightColorPicker(false);
@@ -530,17 +579,17 @@ export default function RichTextEditor({
             size="icon"
             variant="ghost"
             onClick={() => setShowFontSizePicker(!showFontSizePicker)}
-            className="h-9 w-9 hover:bg-blue-100 rounded-md"
+            className="size-8 rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
             title="Font Size"
           >
-            <span className="text-sm font-semibold">A</span>
+            <span className="text-xs font-bold tracking-tight">A</span>
           </Button>
           {showFontSizePicker && (
-            <div className="absolute top-full left-0 p-2 border bg-white shadow-lg rounded-xl mt-1 z-40">
+            <div className="absolute left-0 top-full z-40 mt-1.5 rounded-xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-800">
               {FONT_SIZES.map((size) => (
                 <button
                   key={size}
-                  className="block w-full text-left px-4 py-2 hover:bg-blue-100 rounded-md"
+                  className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
                   onClick={() => {
                     editor.chain().focus().setFontSize(size).run();
                     setShowFontSizePicker(false);
@@ -553,28 +602,39 @@ export default function RichTextEditor({
           )}
         </div>
 
-        <Separator orientation="vertical" className="h-6 mx-1" />
+        <Separator
+          orientation="vertical"
+          className="mx-1.5 h-5 bg-slate-200 dark:bg-slate-600"
+        />
 
-        {toolbarButton(
-          <Upload size={16} />,
-          false,
-          () => fileInputRef.current?.click(),
-          "Upload File",
-        )}
+        <label
+          htmlFor={fileInputId}
+          className={cn(
+            "inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-slate-600 transition-all hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white",
+          )}
+          title="Upload File"
+        >
+          <Upload size={16} />
+        </label>
         <input
+          id={fileInputId}
           type="file"
-          accept=".txt,.doc,.docx"
+          accept=".txt,.doc,.docx,.pdf"
           ref={fileInputRef}
           onChange={handleFileUpload}
           className="hidden"
         />
-        {toolbarButton(
-          <ImageIcon size={16} />,
-          false,
-          () => imageInputRef.current?.click(),
-          "Insert Image",
-        )}
+        <label
+          htmlFor={imageInputId}
+          className={cn(
+            "inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-slate-600 transition-all hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white",
+          )}
+          title="Insert Image"
+        >
+          <ImageIcon size={16} />
+        </label>
         <input
+          id={imageInputId}
           type="file"
           accept="image/*"
           ref={imageInputRef}
@@ -587,25 +647,116 @@ export default function RichTextEditor({
           removeImage,
           "Remove Selected Image",
         )}
+
+        {(onDownloadPdf || onDownloadDocx) && (
+          <>
+            <Separator
+              orientation="vertical"
+              className="mx-1.5 h-5 bg-slate-200 dark:bg-slate-600"
+            />
+            {onDownloadPdf && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onDownloadPdf(() => editor.getHTML())}
+                className="size-8 rounded-md text-slate-600 hover:bg-indigo-100 hover:text-indigo-700 dark:text-slate-400 dark:hover:bg-indigo-900/50 dark:hover:text-indigo-300"
+                title="Download PDF"
+              >
+                <FileText size={16} />
+              </Button>
+            )}
+            {onDownloadDocx && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onDownloadDocx(() => editor.getHTML())}
+                className="size-8 rounded-md text-slate-600 hover:bg-indigo-100 hover:text-indigo-700 dark:text-slate-400 dark:hover:bg-indigo-900/50 dark:hover:text-indigo-300"
+                title="Download DOCX"
+              >
+                <FileDown size={16} />
+              </Button>
+            )}
+            {onPrint && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onPrint(() => editor.getHTML())}
+                className="size-8 rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
+                title="Print"
+              >
+                <Printer size={16} />
+              </Button>
+            )}
+            {onClear && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onClear}
+                className="size-8 rounded-md text-slate-600 hover:bg-red-100 hover:text-red-600 dark:text-slate-400 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                title="Clear content"
+              >
+                <Eraser size={16} />
+              </Button>
+            )}
+          </>
+        )}
       </div>
 
       {/* Editor */}
-      <div className="min-h-[300px] bg-white rounded-b-xl focus-within:ring-2 focus-within:ring-blue-400 p-3 overflow-y-auto max-h-[600px]">
+      <div className="min-h-[320px] overflow-y-auto bg-white focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:ring-inset dark:bg-slate-900 dark:focus-within:ring-indigo-500/30 max-h-[70vh]">
         <EditorContent editor={editor} />
       </div>
 
+      {/* Status bar */}
+      <div className="flex items-center justify-between border-t border-slate-200/80 bg-slate-50/60 px-4 py-2 text-xs text-slate-500 dark:border-slate-700/50 dark:bg-slate-800/30 dark:text-slate-400">
+        <div className="flex items-center gap-4">
+          <span>
+            <strong className="font-semibold text-slate-700 dark:text-slate-300">
+              {getWordCount(value)}
+            </strong>{" "}
+            words
+          </span>
+          <span>
+            <strong className="font-semibold text-slate-700 dark:text-slate-300">
+              {getCharCount(value)}
+            </strong>{" "}
+            characters
+          </span>
+        </div>
+      </div>
+
       <style>{`
-        .rich-text-content h1 { font-size: 2rem; margin: 0.5rem 0; font-weight:700; }
-        .rich-text-content h2 { font-size: 1.6rem; margin: 0.45rem 0; font-weight:600; }
-        .rich-text-content h3 { font-size: 1.3rem; margin: 0.4rem 0; font-weight:600; }
-        .rich-text-content h4 { font-size: 1.1rem; margin: 0.35rem 0; font-weight:500; }
-        .rich-text-content p { margin: 0.35rem 0; }
-        .rich-text-content img { max-width: 100%; border-radius: 0.5rem; margin-top: 0.5rem; display:block; }
-        .rich-text-content ul { list-style-type: disc; margin-left: 1.5rem; padding-left: 1rem; }
-        .rich-text-content ol { list-style-type: decimal; margin-left: 1.5rem; padding-left: 1rem; }
-        .rich-text-content li { margin: 0.25rem 0; }
-        .rich-text-content a { color: #2563eb; text-decoration: underline; cursor: pointer; }
-        .rich-text-content a:hover { color: #1d4ed8; }
+        .rich-text-content p.is-empty:first-child::before {
+          color: #94a3b8;
+          content: attr(data-placeholder);
+          float: left;
+          height: 0;
+          pointer-events: none;
+        }
+        .dark .rich-text-content p.is-empty:first-child::before {
+          color: #64748b;
+        }
+        .rich-text-content h1 { font-size: 2rem; margin: 0.75rem 0 0.5rem; font-weight: 700; letter-spacing: -0.025em; color: #0f172a; }
+        .dark .rich-text-content h1 { color: #f8fafc; }
+        .rich-text-content h2 { font-size: 1.5rem; margin: 0.65rem 0 0.4rem; font-weight: 600; letter-spacing: -0.02em; color: #0f172a; }
+        .dark .rich-text-content h2 { color: #f8fafc; }
+        .rich-text-content h3 { font-size: 1.25rem; margin: 0.55rem 0 0.35rem; font-weight: 600; color: #0f172a; }
+        .dark .rich-text-content h3 { color: #f8fafc; }
+        .rich-text-content h4 { font-size: 1.1rem; margin: 0.45rem 0 0.3rem; font-weight: 600; color: #0f172a; }
+        .dark .rich-text-content h4 { color: #f8fafc; }
+        .rich-text-content p { margin: 0.4rem 0; }
+        .rich-text-content img { max-width: 100%; border-radius: 0.75rem; margin: 0.75rem 0; display: block; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
+        .rich-text-content ul { list-style-type: disc; margin: 0.5rem 0; padding-left: 1.5rem; }
+        .rich-text-content ol { list-style-type: decimal; margin: 0.5rem 0; padding-left: 1.5rem; }
+        .rich-text-content li { margin: 0.2rem 0; }
+        .rich-text-content a { color: #4f46e5; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font-weight: 500; }
+        .rich-text-content a:hover { color: #4338ca; }
+        .dark .rich-text-content a { color: #818cf8; }
+        .dark .rich-text-content a:hover { color: #a5b4fc; }
       `}</style>
     </div>
   );

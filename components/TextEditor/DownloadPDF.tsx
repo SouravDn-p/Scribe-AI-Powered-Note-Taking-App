@@ -222,14 +222,12 @@ const isStrikethrough = (el: HTMLElement) => {
   );
 };
 
-export default async function DownloadPDF(
+export async function generatePdfBlob(
   htmlContent: string,
-  logoUrl?: string | undefined,
-  organizationName?: string | undefined,
-  fileName?: string | undefined,
-) {
+  logoUrl?: string,
+  organizationName?: string
+): Promise<Blob | null> {
   try {
-    console.log("HTML Content:", logoUrl);
     const temp = document.createElement("div");
     temp.innerHTML = htmlContent;
 
@@ -754,6 +752,22 @@ export default async function DownloadPDF(
     );
 
     const blob = await pdf(doc).toBlob();
+    return blob;
+  } catch (err) {
+    console.error("PDF generation failed:", err);
+    return null;
+  }
+}
+
+export default async function DownloadPDF(
+  htmlContent: string,
+  logoUrl?: string,
+  organizationName?: string,
+  fileName?: string
+) {
+  const blob = await generatePdfBlob(htmlContent, logoUrl, organizationName);
+  if (!blob) return;
+  try {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -762,9 +776,7 @@ export default async function DownloadPDF(
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-
-    console.log("PDF downloaded successfully!");
   } catch (err) {
-    console.error("PDF generation failed:", err);
+    console.error("PDF download failed:", err);
   }
 }
